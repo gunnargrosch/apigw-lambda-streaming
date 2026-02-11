@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API Gateway Response Streaming Demo</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+  <style>
+    :root {
+      --bg-primary: #0a0e17;
+      --bg-card: #111827;
+      --bg-inset: #0d1220;
+      --bg-header: #1a202e;
+      --border: #1f2937;
+      --border-light: #374151;
+      --text: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --stream: #10b981;
+      --stream-dim: rgba(16, 185, 129, 0.15);
+      --buffer: #f59e0b;
+      --buffer-dim: rgba(245, 158, 11, 0.15);
+      --blue: #3b82f6;
+      --red: #ef4444;
+      --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg-primary);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .header {
+      text-align: center;
+      padding: 2.5rem 1.5rem 1.75rem;
+      background: linear-gradient(180deg, #111827 0%, var(--bg-primary) 100%);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.4rem;
+    }
+
+    .header h1 span {
+      background: linear-gradient(135deg, var(--stream), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header p {
+      color: var(--text-secondary);
+      max-width: 520px;
+      margin: 0 auto;
+      font-size: 0.95rem;
+    }
+
+    .main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    /* Config & Prompt */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .field-label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.4rem;
+    }
+
+    .field-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.4rem;
+    }
+
+    .char-count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+
+    input[type="url"], textarea {
+      width: 100%;
+      padding: 0.6rem 0.85rem;
+      background: var(--bg-inset);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.875rem;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+
+    input[type="url"] { font-family: var(--mono); font-size: 0.8rem; }
+    textarea { font-family: var(--sans); resize: vertical; min-height: 68px; line-height: 1.5; }
+
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+    }
+
+    .presets {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.6rem;
+    }
+
+    .preset {
+      padding: 0.3rem 0.7rem;
+      background: var(--bg-inset);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .preset:hover {
+      color: var(--text);
+      border-color: var(--blue);
+      background: rgba(59, 130, 246, 0.08);
+    }
+
+    /* Run button */
+    .run-btn {
+      width: 100%;
+      padding: 0.85rem;
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 1rem;
+    }
+
+    .run-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3);
+    }
+
+    .run-btn:active:not(:disabled) { transform: translateY(0); }
+    .run-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Panels */
+    .panels {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    .panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+
+    .panel.streaming.active { border-color: var(--stream); box-shadow: 0 0 20px var(--stream-dim); }
+    .panel.non-streaming.active { border-color: var(--buffer); box-shadow: 0 0 20px var(--buffer-dim); }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-header);
+    }
+
+    .panel-title {
+      font-weight: 600;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .streaming .dot { background: var(--stream); }
+    .non-streaming .dot { background: var(--buffer); }
+
+    .panel-meta {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.75rem;
+      font-family: var(--mono);
+    }
+
+    .panel-status { color: var(--text-muted); }
+    .panel-elapsed { color: var(--text-secondary); min-width: 3.5em; text-align: right; }
+
+    .panel-body {
+      padding: 1rem 1.15rem;
+      min-height: 220px;
+      max-height: 380px;
+      overflow-y: auto;
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      line-height: 1.75;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .panel-body::-webkit-scrollbar { width: 5px; }
+    .panel-body::-webkit-scrollbar-track { background: transparent; }
+    .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .cursor {
+      display: inline-block;
+      width: 2px;
+      height: 1.1em;
+      background: var(--stream);
+      margin-left: 1px;
+      vertical-align: text-bottom;
+      animation: blink 0.7s step-end infinite;
+    }
+
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .placeholder { color: var(--text-muted); font-style: italic; font-family: var(--sans); font-size: 0.85rem; }
+    .error-text { color: var(--red); }
+
+    .waiting {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      color: var(--text-muted);
+      font-family: var(--sans);
+      font-size: 0.85rem;
+    }
+
+    .spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--buffer);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .panel-metrics {
+      padding: 0.6rem 1rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 1.25rem;
+      background: var(--bg-header);
+    }
+
+    .metric { display: flex; flex-direction: column; gap: 0.1rem; }
+
+    .metric-label {
+      font-size: 0.6rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-family: var(--sans);
+    }
+
+    .metric-value {
+      font-size: 0.8rem;
+      font-weight: 600;
+      font-family: var(--mono);
+      color: var(--text-secondary);
+    }
+
+    .streaming .metric-value { color: var(--stream); }
+    .non-streaming .metric-value { color: var(--buffer); }
+
+    /* Summary */
+    .summary {
+      margin-top: 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      display: none;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .summary.visible { display: block; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+    .summary h3 {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.85rem;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 0.75rem;
+    }
+
+    .summary-card {
+      background: var(--bg-inset);
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+    }
+
+    .summary-card .label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 0.6rem;
+    }
+
+    .summary-card .values {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+    }
+
+    .summary-card .val {
+      font-family: var(--mono);
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+
+    .summary-card .val.stream { color: var(--stream); }
+    .summary-card .val.buff { color: var(--buffer); }
+
+    .summary-card .val-label {
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    .speedup {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.3rem;
+      padding-top: 0.2rem;
+    }
+
+    .speedup-badge {
+      background: linear-gradient(135deg, var(--stream), #059669);
+      color: white;
+      padding: 0.25rem 0.75rem;
+      border-radius: 16px;
+      font-weight: 700;
+      font-size: 1.2rem;
+      font-family: var(--mono);
+    }
+
+    .speedup-label {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+    }
+
+    .footer {
+      text-align: center;
+      padding: 1.5rem;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 720px) {
+      .panels { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .header h1 { font-size: 1.35rem; }
+      .header p { font-size: 0.85rem; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>API Gateway Response <span>Streaming</span></h1>
+    <p>See the difference streaming makes. Both endpoints call the same model — streaming delivers the first token in milliseconds.</p>
+  </header>
+
+  <main class="main">
+    <section class="card">
+      <label class="field-label" for="apiUrl">API Endpoint</label>
+      <input id="apiUrl" type="url" placeholder="https://xxxxxxxxxx.execute-api.us-west-2.amazonaws.com/demo" spellcheck="false" autocomplete="url">
+    </section>
+
+    <section class="card">
+      <div class="field-header">
+        <label class="field-label" for="prompt">Prompt</label>
+        <span class="char-count" id="charCount">0 chars</span>
+      </div>
+      <textarea id="prompt" rows="2" placeholder="Enter a prompt to send to both endpoints...">Write a short story about a cloud architect who discovers their serverless functions have become sentient.</textarea>
+      <div class="presets">
+        <button class="preset" onclick="setPrompt('Explain quantum computing to a five-year-old using only analogies from everyday life.')">Quantum for kids</button>
+        <button class="preset" onclick="setPrompt('Write a poem about the journey of an HTTP request from a browser to a server and back.')">HTTP request poem</button>
+        <button class="preset" onclick="setPrompt('Compare and contrast microservices vs monolithic architecture. Give concrete examples of when each is the better choice.')">Architecture debate</button>
+      </div>
+    </section>
+
+    <button class="run-btn" id="runBtn" onclick="runComparison()">Run Comparison</button>
+
+    <div class="panels">
+      <div class="panel streaming" id="streamPanel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot"></span> Streaming</div>
+          <div class="panel-meta">
+            <span class="panel-status" id="streamStatus">Ready</span>
+            <span class="panel-elapsed" id="streamElapsed"></span>
+          </div>
+        </div>
+        <div class="panel-body" id="streamResponse">
+          <span class="placeholder">Tokens appear here in real time...</span>
+        </div>
+        <div class="panel-metrics">
+          <div class="metric"><span class="metric-label">TTFB</span><span class="metric-value" id="streamTtfb">&mdash;</span></div>
+          <div class="metric"><span class="metric-label">Total</span><span class="metric-value" id="streamTotal">&mdash;</span></div>
+          <div class="metric"><span class="metric-label">Tokens</span><span class="metric-value" id="streamTokens">&mdash;</span></div>
+          <div class="metric"><span class="metric-label">Speed</span><span class="metric-value" id="streamSpeed">&mdash;</span></div>
+        </div>
+      </div>
+
+      <div class="panel non-streaming" id="nonStreamPanel">
+        <div class="panel-header">
+          <div class="panel-title"><span class="dot"></span> Buffered</div>
+          <div class="panel-meta">
+            <span class="panel-status" id="nonStreamStatus">Ready</span>
+            <span class="panel-elapsed" id="nonStreamElapsed"></span>
+          </div>
+        </div>
+        <div class="panel-body" id="nonStreamResponse">
+          <span class="placeholder">Complete response appears here at once...</span>
+        </div>
+        <div class="panel-metrics">
+          <div class="metric"><span class="metric-label">TTFB</span><span class="metric-value" id="nonStreamTtfb">&mdash;</span></div>
+          <div class="metric"><span class="metric-label">Total</span><span class="metric-value" id="nonStreamTotal">&mdash;</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="summary" id="summary">
+      <h3>Results</h3>
+      <div class="summary-grid">
+        <div class="summary-card">
+          <div class="label">Time to First Byte</div>
+          <div class="values">
+            <div><div class="val stream" id="summaryStreamTtfb">&mdash;</div><div class="val-label">Streaming</div></div>
+            <div><div class="val buff" id="summaryNonStreamTtfb">&mdash;</div><div class="val-label">Buffered</div></div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="label">Total Time</div>
+          <div class="values">
+            <div><div class="val stream" id="summaryStreamTotal">&mdash;</div><div class="val-label">Streaming</div></div>
+            <div><div class="val buff" id="summaryNonStreamTotal">&mdash;</div><div class="val-label">Buffered</div></div>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="label">First Byte Speedup</div>
+          <div class="speedup">
+            <span class="speedup-badge" id="summarySpeedup">&mdash;</span>
+            <span class="speedup-label" id="summarySpeedupLabel">faster</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="footer">
+    Built with AWS Lambda, API Gateway, and Amazon Bedrock
+  </footer>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    let state = {};
+    let timerInterval = null;
+
+    function formatTime(ms) {
+      if (ms == null) return '\u2014';
+      return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(2)}s`;
+    }
+
+    function setRunning(running) {
+      $('runBtn').disabled = running;
+      $('runBtn').textContent = running ? 'Running...' : 'Run Comparison';
+      $('apiUrl').disabled = running;
+      $('prompt').disabled = running;
+    }
+
+    function startTimers() {
+      timerInterval = setInterval(() => {
+        const now = Date.now();
+        if (!state.streaming.done) {
+          $('streamElapsed').textContent = formatTime(now - state.streaming.startTime);
+        }
+        if (!state.nonStreaming.done) {
+          $('nonStreamElapsed').textContent = formatTime(now - state.nonStreaming.startTime);
+        }
+      }, 50);
+    }
+
+    function stopTimers() {
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    }
+
+    async function runComparison() {
+      const apiUrl = $('apiUrl').value.replace(/\/+$/, '');
+      const prompt = $('prompt').value.trim();
+
+      if (!apiUrl) { $('apiUrl').focus(); return; }
+      if (!prompt) { $('prompt').focus(); return; }
+
+      localStorage.setItem('streamingDemoApiUrl', apiUrl);
+
+      const now = Date.now();
+      state = {
+        streaming: { startTime: now, ttfb: null, total: null, tokens: 0, done: false },
+        nonStreaming: { startTime: now, ttfb: null, total: null, done: false },
+      };
+
+      // Reset panels
+      $('streamResponse').innerHTML = '<span class="cursor"></span>';
+      $('nonStreamResponse').innerHTML = '<div class="waiting"><div class="spinner"></div><span>Waiting for complete response...</span></div>';
+      $('streamPanel').classList.add('active');
+      $('nonStreamPanel').classList.add('active');
+
+      ['streamTtfb', 'streamTotal', 'streamTokens', 'streamSpeed'].forEach(id => $(id).textContent = '\u2014');
+      ['nonStreamTtfb', 'nonStreamTotal'].forEach(id => $(id).textContent = '\u2014');
+      $('streamElapsed').textContent = '0ms';
+      $('nonStreamElapsed').textContent = '0ms';
+      $('streamStatus').textContent = 'Connecting...';
+      $('nonStreamStatus').textContent = 'Connecting...';
+      $('summary').classList.remove('visible');
+
+      setRunning(true);
+      startTimers();
+
+      await Promise.all([
+        runStreaming(apiUrl, prompt).catch(handleError('streaming')),
+        runNonStreaming(apiUrl, prompt).catch(handleError('nonStreaming')),
+      ]);
+
+      stopTimers();
+      $('streamPanel').classList.remove('active');
+      $('nonStreamPanel').classList.remove('active');
+      showSummary();
+      setRunning(false);
+    }
+
+    async function runStreaming(apiUrl, prompt) {
+      const response = await fetch(`${apiUrl}/streaming`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      const el = $('streamResponse');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        if (state.streaming.ttfb === null) {
+          state.streaming.ttfb = Date.now() - state.streaming.startTime;
+          $('streamTtfb').textContent = formatTime(state.streaming.ttfb);
+          $('streamStatus').textContent = 'Streaming...';
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.token) {
+              state.streaming.tokens++;
+              const cursor = el.querySelector('.cursor');
+              if (cursor) cursor.remove();
+              el.insertAdjacentText('beforeend', parsed.token);
+              el.insertAdjacentHTML('beforeend', '<span class="cursor"></span>');
+              el.scrollTop = el.scrollHeight;
+            }
+            if (parsed.error) {
+              el.innerHTML = `<span class="error-text">Error: ${parsed.error}</span>`;
+            }
+          } catch {}
+        }
+
+        $('streamTokens').textContent = state.streaming.tokens;
+        const elapsed = (Date.now() - state.streaming.startTime) / 1000;
+        if (elapsed > 0 && state.streaming.tokens > 0) {
+          $('streamSpeed').textContent = `${(state.streaming.tokens / elapsed).toFixed(1)}/s`;
+        }
+      }
+
+      state.streaming.total = Date.now() - state.streaming.startTime;
+      state.streaming.done = true;
+      $('streamTotal').textContent = formatTime(state.streaming.total);
+      $('streamElapsed').textContent = formatTime(state.streaming.total);
+      $('streamStatus').textContent = 'Complete';
+      const cursor = el.querySelector('.cursor');
+      if (cursor) cursor.remove();
+    }
+
+    async function runNonStreaming(apiUrl, prompt) {
+      $('nonStreamStatus').textContent = 'Waiting...';
+
+      const response = await fetch(`${apiUrl}/non-streaming`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+
+      state.nonStreaming.ttfb = Date.now() - state.nonStreaming.startTime;
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+      const data = await response.json();
+      state.nonStreaming.total = Date.now() - state.nonStreaming.startTime;
+      state.nonStreaming.done = true;
+
+      $('nonStreamResponse').textContent = data.response || data.error || 'No response';
+      $('nonStreamTtfb').textContent = formatTime(state.nonStreaming.ttfb);
+      $('nonStreamTotal').textContent = formatTime(state.nonStreaming.total);
+      $('nonStreamElapsed').textContent = formatTime(state.nonStreaming.total);
+      $('nonStreamStatus').textContent = 'Complete';
+    }
+
+    function handleError(panel) {
+      return (error) => {
+        state[panel].done = true;
+        state[panel].total = Date.now() - state[panel].startTime;
+        const responseId = panel === 'streaming' ? 'streamResponse' : 'nonStreamResponse';
+        const statusId = panel === 'streaming' ? 'streamStatus' : 'nonStreamStatus';
+        $(responseId).innerHTML = `<span class="error-text">Error: ${error.message}</span>`;
+        $(statusId).textContent = 'Error';
+      };
+    }
+
+    function showSummary() {
+      if (state.streaming.ttfb == null || state.nonStreaming.ttfb == null) return;
+
+      $('summaryStreamTtfb').textContent = formatTime(state.streaming.ttfb);
+      $('summaryNonStreamTtfb').textContent = formatTime(state.nonStreaming.ttfb);
+      $('summaryStreamTotal').textContent = formatTime(state.streaming.total);
+      $('summaryNonStreamTotal').textContent = formatTime(state.nonStreaming.total);
+
+      const speedup = state.nonStreaming.ttfb / state.streaming.ttfb;
+      $('summarySpeedup').textContent = `${speedup.toFixed(1)}x`;
+      $('summarySpeedupLabel').textContent = 'faster first byte';
+      $('summary').classList.add('visible');
+    }
+
+    function setPrompt(text) {
+      $('prompt').value = text;
+      updateCharCount();
+      $('prompt').focus();
+    }
+
+    function updateCharCount() {
+      $('charCount').textContent = `${$('prompt').value.length} chars`;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const savedUrl = localStorage.getItem('streamingDemoApiUrl');
+      if (savedUrl) $('apiUrl').value = savedUrl;
+      updateCharCount();
+      $('prompt').addEventListener('input', updateCharCount);
+
+      document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+          e.preventDefault();
+          if (!$('runBtn').disabled) runComparison();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

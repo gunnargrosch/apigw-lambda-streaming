@@ -1,0 +1,17 @@
+{
+  "name": "streaming-demo",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/*.ts --bundle --platform=node --target=es2020 --outdir=dist --format=esm --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\""
+  },
+  "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.713.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.10.5",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.7.3"
+  }
+}

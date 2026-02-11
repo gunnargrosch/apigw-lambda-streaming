@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Demo comparing API Gateway progressive streaming vs non-streaming
+
+Parameters:
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-3-5-sonnet-20241022-v2:0
+    Description: Bedrock model ID
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Timeout: 120
+    MemorySize: 256
+    Environment:
+      Variables:
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+
+Resources:
+  # API Gateway
+  DemoApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: demo
+      DefinitionBody: !Transform
+        Name: AWS::Include
+        Parameters:
+          Location: openapi.yaml
+      Cors:
+        AllowOrigin: '''*'''
+        AllowMethods: '''POST,OPTIONS'''
+        AllowHeaders: '''Content-Type'''
+
+  # Lambda execution role
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModelWithResponseStream
+                  - bedrock:InvokeModel
+                Resource: '*'
+
+  # Streaming Lambda
+  StreamingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: dist/streaming.handler
+      CodeUri: functions/
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2020
+        EntryPoints:
+          - src/streaming.ts
+
+  # Permission for API Gateway to invoke streaming function
+  StreamingFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref StreamingFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DemoApi}/*/*
+
+  # Non-streaming Lambda
+  NonStreamingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: dist/non-streaming.handler
+      CodeUri: functions/
+      Role: !GetAtt LambdaExecutionRole.Arn
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2020
+        EntryPoints:
+          - src/non-streaming.ts
+
+  # Permission for API Gateway to invoke non-streaming function
+  NonStreamingFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NonStreamingFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${DemoApi}/*/*
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/demo
+  StreamingEndpoint:
+    Description: Streaming endpoint
+    Value: !Sub https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/demo/streaming
+  NonStreamingEndpoint:
+    Description: Non-streaming endpoint
+    Value: !Sub https://${DemoApi}.execute-api.${AWS::Region}.amazonaws.com/demo/non-streaming

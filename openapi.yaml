@@ -1,0 +1,61 @@
+openapi: 3.0.1
+info:
+  title: streaming-demo-api
+  description: Demo comparing API Gateway progressive streaming vs non-streaming
+  version: 1.0.0
+
+paths:
+  /streaming:
+    post:
+      summary: Stream response from Bedrock
+      operationId: streamResponse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+      responses:
+        '200':
+          description: Streaming response with SSE events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+      x-amazon-apigateway-integration:
+        type: AWS_PROXY
+        httpMethod: POST
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2021-11-15/functions/${StreamingFunction.Arn}/response-streaming-invocations"
+        responseTransferMode: STREAM
+        passthroughBehavior: when_no_match
+
+  /non-streaming:
+    post:
+      summary: Non-streaming response from Bedrock
+      operationId: nonStreamResponse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                prompt:
+                  type: string
+      responses:
+        '200':
+          description: Complete response
+          content:
+            application/json:
+              schema:
+                type: object
+      x-amazon-apigateway-integration:
+        type: AWS_PROXY
+        httpMethod: POST
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${NonStreamingFunction.Arn}/invocations"
+        passthroughBehavior: when_no_match
