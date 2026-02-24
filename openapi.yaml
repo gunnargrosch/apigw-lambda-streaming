@@ -1,7 +1,7 @@
 openapi: 3.0.1
 info:
-  title: streaming-demo-api
-  description: Demo comparing API Gateway progressive streaming vs non-streaming
+  title: apigw-lambda-streaming
+  description: API Gateway response streaming with Lambda and Bedrock
   version: 1.0.0
 
 paths:

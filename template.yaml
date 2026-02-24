@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Demo comparing API Gateway progressive streaming vs non-streaming
+Description: apigw-lambda-streaming - API Gateway response streaming with Lambda and Bedrock
 
 Parameters:
   BedrockModelId:
