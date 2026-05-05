@@ -4,6 +4,8 @@
 
 Demonstrates the performance difference between [API Gateway response streaming](https://docs.aws.amazon.com/apigateway/latest/developerguide/rest-api-streaming.html) and traditional buffered responses when calling [Amazon Bedrock](https://aws.amazon.com/bedrock/). Streaming delivers the first token to the client in ~500ms instead of waiting ~8-10s for the full response — with no change in total generation time.
 
+Read the [blog post](https://dev.to/gunnargrosch/streaming-bedrock-responses-through-api-gateway-and-lambda-2lj9) for a full walkthrough.
+
 ## Architecture
 
 ```text
